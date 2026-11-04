@@ -1,0 +1,3 @@
+235540fa81fb761678edb731c52111857ad0ccdb83887656ff79e1676046a23e  viridia-finder-0.4.0-sea-route.png
+dc7b857ba21f5e6c9795984fb809e8cf311a2b66ed02cc4addd92e0e710977df  viridia-finder-0.4.0-source.zip
+6fe6142609a183ae283cce74df2a57ef280c61090b7b28948bcae462de3892d3  viridia-finder-0.4.0.jar

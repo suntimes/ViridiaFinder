@@ -1,0 +1,23 @@
+{
+  "source": "Local Xaero World Map surface cache for Monumenta monumenta:isles; machine-specific path omitted.",
+  "format": "Xaero region 8/6",
+  "origin": [
+    -2560,
+    -1024
+  ],
+  "step": 4,
+  "width": 896,
+  "height": 800,
+  "regions": 48,
+  "cells": {
+    "0": 118960,
+    "1": 150975,
+    "2": 446865
+  },
+  "water_heights": {
+    "80": 7296431,
+    "79": 48,
+    "81": 22
+  },
+  "policy": "All 16 pixels must be known surface water at Y79..81; non-water overlays blocked; unknown blocked."
+}

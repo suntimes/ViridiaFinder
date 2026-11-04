@@ -1,0 +1,37 @@
+plugins { id 'fabric-loom' version '1.6.12' }
+
+version = '0.4.0'
+group = 'org.example.viridiafinder'
+
+repositories { maven { url = 'https://maven.fabricmc.net/' }; mavenCentral() }
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.20.4'
+    mappings 'net.fabricmc:yarn:1.20.4+build.3:v2'
+    modImplementation 'net.fabricmc:fabric-loader:0.15.11'
+    modImplementation 'net.fabricmc.fabric-api:fabric-api:0.97.2+1.20.4'
+}
+
+tasks.withType(JavaCompile).configureEach { options.release = 17; options.encoding = 'UTF-8' }
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand 'version': project.version }
+}
+
+tasks.register('verifySurvey', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.output.classesDirs + sourceSets.main.output + configurations.testCompileClasspath + configurations.mappings
+    mainClass = 'org.example.viridiafinder.VerificationLauncher'
+    systemProperty 'fabric.development', 'true'
+    systemProperty 'file.encoding', 'UTF-8'
+    args sourceSets.main.output.classesDirs.files.collect { it.absolutePath }
+    args sourceSets.test.output.classesDirs.files.collect { it.absolutePath }
+    workingDir = layout.buildDirectory.dir('verification').get().asFile
+    doFirst { workingDir.mkdirs() }
+}
+check.dependsOn verifySurvey
+// 此项目使用可执行集成验证，不使用 JUnit 测试发现器。
+tasks.named('test') { enabled = false }
+

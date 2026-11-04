@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "org.example.viridiafinder.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": ["ItemUseMixin", "SwimmingInputMixin", "SwimmingSprintMixin"],
+  "injectors": {"defaultRequire": 1}
+}

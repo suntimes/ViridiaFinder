@@ -1,6 +1,6 @@
 # 维里迪亚寻宝 Viridia Finder 0.4.0
 
-Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，退出游戏后将发布 JAR 放入 mods，删除旧版同名模组 JAR。无需服务端安装。详细说明见《醒来先看-0.4.0.txt》。
+Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，退出游戏后将发布 JAR 放入 mods，删除旧版同名模组 JAR。无需服务端安装。安装包请从右侧 Releases 下载。
 
 ## 使用
 
@@ -16,7 +16,7 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 
 读取本地 Xaero 地表缓存生成水域快照后打包，A* 水域寻路加多候选覆盖选站。四格网格采用保守水域判定，未知和陆地不可穿越，仅保留最大的连通海域。规划不会自动移动玩家，也不会强制加载区块。开始位置在岸上时先提示海面入口。历史地形不能证明当前实际通行。
 
-移动辅助默认关闭：连续激流使用正常蓄力/释放，自动向前游泳通过普通前进输入与疾跑请求实现；不自动转向，不改变速度或强制姿态。详细暂停条件和限制见随附说明。
+移动辅助默认关闭：连续激流使用正常蓄力/释放，自动向前游泳通过普通前进输入与疾跑请求实现；不自动转向，不改变速度或强制姿态。后退、潜行、攻击、打开界面或失去窗口焦点会暂停辅助；F7关闭、死亡、离开世界会关闭辅助。停止已开始的蓄力可能释放最后一次激流。
 
 轮次识别基于手动之眼查询的系统提示，依赖公开两小时周期和 NPC 估算，存在余量与备用手动操作，不能视为读取服务器轮次编号。
 
@@ -24,7 +24,7 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 
 使用 Gradle 8.7 和 JDK 17：`gradle build`。首次构建需要下载依赖。Loom 1.6.12，Fabric Loader 0.15.11，Fabric API 0.97.2+1.20.4，Yarn 1.20.4+build.3。
 
-`check` 调用 `verifySurvey` 可执行验证程序，通过 Fabric Knot 加载真实 Minecraft 类和混入；未采用 JUnit 测试发现。报告生成于 build/verification。测试结果和未进行的实机测试见《测试报告.md》。
+`check` 调用 `verifySurvey` 可执行验证程序，通过 Fabric Knot 加载真实 Minecraft 类和混入；未采用 JUnit 测试发现。报告生成于 build/verification。0.4.0 已通过99项程序验证；尚未连接服务器验证动作效果、搜索耗时和HUD兼容性。
 
 `tools/import_xaero_water.py` 用于读取本地 Xaero 地表区域并生成水域资源，仅支持已检查的格式版本。`tools/render_water_route.py` 用于生成路线预览。运行脚本时先查看参数；导入后的资源需替换 src/main/resources/assets/viridiafinder/isles-water.bin 并重新构建。没有实时 Xaero 依赖。
 
@@ -36,10 +36,9 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 
 来源文档中的服务器许可未覆盖本模组的全部辅助功能，不声明其已获服务器许可。
 
-## 0.4.0 下载文件
+## 下载
 
-- [安装 JAR](releases/v0.4.0/viridia-finder-0.4.0.jar)
-- [完整源码 ZIP](releases/v0.4.0/viridia-finder-0.4.0-source.zip)
-- [海面路线预览](releases/v0.4.0/viridia-finder-0.4.0-sea-route.png)
+- [正式版本与安装 JAR](https://github.com/suntimes/ViridiaFinder/releases/latest)
+- [直接下载 0.4.0 JAR](https://github.com/suntimes/ViridiaFinder/releases/download/v0.4.0/viridia-finder-0.4.0.jar)
 
-程序验证通过99项，尚未连接服务器实测。详细说明见本仓库使用说明和测试报告。
+源码可通过 Code → Download ZIP 或 Release 页面中的 Source code 下载。安装只需要 JAR，无需下载源码。

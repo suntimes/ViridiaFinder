@@ -1,0 +1,75 @@
+name: 发布 0.4.0 安装包
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-0.4.0.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-0.4.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 校验原版 JAR 并发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, urllib.request, urllib.error, urllib.parse
+          repo = os.environ['REPOSITORY']
+          assert repo == 'suntimes/ViridiaFinder'
+          api = 'https://api.github.com/repos/' + repo
+          name = 'viridia-finder-0.4.0.jar'
+          expected = '6fe6142609a183ae283cce74df2a57ef280c61090b7b28948bcae462de3892d3'
+          source = 'https://raw.githubusercontent.com/' + repo + '/272faccb90206ff509a93de7001a78bd7282b438/releases/v0.4.0/' + name
+          with urllib.request.urlopen(source, timeout=60) as response:
+              jar = response.read()
+          assert hashlib.sha256(jar).hexdigest() == expected, 'JAR checksum mismatch'
+          def request(url, method='GET', data=None, binary=False):
+              assert urllib.parse.urlparse(url).hostname in ('api.github.com', 'uploads.github.com')
+              headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/octet-stream' if binary else 'application/json'}
+              payload = data if binary else (json.dumps(data).encode() if data is not None else None)
+              with urllib.request.urlopen(urllib.request.Request(url, data=payload, headers=headers, method=method), timeout=60) as response:
+                  return json.load(response)
+          body = '''适用于 Minecraft 1.20.4 / Fabric / Java 17 或以上，需要对应 Fabric API。
+
+          下载下方 **viridia-finder-0.4.0.jar**，退出游戏后替换 mods 中旧版 JAR，只保留一个版本。
+
+          - F7 同时开关扫描、箱子高亮和地图；F8 查看结果和辅助设置。
+          - 根据实际加载范围规划海面覆盖路线，右上角显示巡查进度。
+          - 支持中文之眼提示判断轮次更新。
+          - 连续激流与自动向前游泳默认关闭，仍受正常游戏和服务器条件限制。
+
+          已通过99项程序验证，尚未连接服务器实测；发现普通箱子不等于发现本轮宝藏。源码使用下方 GitHub 自动提供的 Source code 下载。'''
+          try:
+              release = request(api + '/releases/tags/v0.4.0')
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+              release = request(api + '/releases', 'POST', {'tag_name': 'v0.4.0', 'target_commitish': os.environ['TARGET_SHA'], 'name': '维里迪亚寻宝 0.4.0', 'body': body, 'draft': True, 'prerelease': False})
+          assets = {a['name']: a for a in release.get('assets', [])}
+          uploads = {name: jar, 'SHA256SUMS.txt': (expected + '  ' + name + '\n').encode()}
+          for asset_name, content in uploads.items():
+              digest = 'sha256:' + hashlib.sha256(content).hexdigest()
+              existing = assets.get(asset_name)
+              if existing:
+                  assert existing['state'] == 'uploaded' and existing['size'] == len(content)
+                  assert existing.get('digest') == digest, 'Existing asset differs; refusing to overwrite'
+                  continue
+              url = release['upload_url'].split('{')[0] + '?name=' + urllib.parse.quote(asset_name)
+              asset = request(url, 'POST', content, binary=True)
+              assert asset['state'] == 'uploaded' and asset['size'] == len(content)
+              assert asset.get('digest') == digest, 'Uploaded asset checksum mismatch'
+          release = request(api + '/releases/' + str(release['id']), 'PATCH', {'draft': False, 'make_latest': 'true'})
+          print(release['html_url'])
+          PY

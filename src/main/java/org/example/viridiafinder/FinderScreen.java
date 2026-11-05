@@ -11,7 +11,7 @@ import static org.example.viridiafinder.ViridiaFinder.*;
 public final class FinderScreen extends Screen {
     int candidate=0, page=0;
     String selected="";
-    FinderScreen(){super(Text.literal("维里迪亚寻宝 0.4.0"));}
+    FinderScreen(){super(Text.literal("维里迪亚寻宝 0.4.1"));}
     Survey.Candidate current(){return survey.candidates.get(candidate);}
     List<Survey.Found> rows(){return visible(current());}
     int perPage(){return Math.max(1,(height-202)/40);}
@@ -20,7 +20,7 @@ public final class FinderScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal(label),b->action.run()).dimensions(x,y,w,20).build());
     }
     @Override protected void init(){
-        int w=Math.max(45,(width-24)/5);
+        int w=Math.max(45,(width-26)/6);
         button("上一候选",8,28,w,()->{candidate=Math.floorMod(candidate-1,169);page=0;selected="";});
         button("下一候选",10+w,28,w,()->{candidate=(candidate+1)%169;page=0;selected="";});
         button("找箱子",12+w*2,28,w,()->{
@@ -28,6 +28,7 @@ public final class FinderScreen extends Screen {
         });
         button("扫描开关",14+w*3,28,w,()->{if(enabled){enabled=false;save();}else enable();});
         button("海面巡查",16+w*4,28,w,ViridiaFinder::route);
+        button("扩大复查",18+w*5,28,w,ViridiaFinder::widenReview);
         button("上一页",8,height-64,60,()->page=Math.max(0,page-1));
         button("下一页",72,height-64,60,()->page=Math.min(Math.max(0,(rows().size()-1)/perPage()),page+1));
         button("巡查切换",136,height-64,65,()->{current().visited=!current().visited;save();});
@@ -42,7 +43,7 @@ public final class FinderScreen extends Screen {
     }
     @Override public void render(DrawContext ctx,int mx,int my,float delta){
         ctx.fill(0,0,width,height,0xED101920);
-        line(ctx,"维里迪亚寻宝 0.4.0｜"+(enabled?"正在扫描":"已暂停")+"｜实例："+instance,8,10,0xFFFFFF);
+        line(ctx,"维里迪亚寻宝 0.4.1｜"+(enabled?"正在扫描":"已暂停")+"｜实例："+instance,8,10,0xFFFFFF);
         var c=current();var list=rows();
         line(ctx,"候选 #"+c.id+" /169："+coords(c.pos)+(c.visited?"（已巡查）":"（未巡查）"),8,56,0xD4E8ED);
         line(ctx,"中心区块："+(view().loaded(c.pos.x()>>4,c.pos.z()>>4)?"已加载":"未加载")+"；"+survey.coverage(c,view()),8,69,0xA7CFD6);
@@ -69,7 +70,7 @@ public final class FinderScreen extends Screen {
         if(button==0&&y>=120&&y<height-78){
             int n=(int)((y-122)/40),i=page*perPage()+n;
             var list=rows();if(n>=0&&n<perPage()&&i<list.size()){
-                var f=list.get(i);selected=f.pos.key();routePlan=null;seaPlan=null;seaPlanning=false;seaStartPending=0;routeRequest++;target=f.pos;targetLabel=f.kind.label;return true;
+                var f=list.get(i);selected=f.pos.key();routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;routeRequest++;target=f.pos;targetLabel=f.kind.label;return true;
             }
         }
         return super.mouseClicked(x,y,button);
@@ -86,7 +87,7 @@ public final class FinderScreen extends Screen {
         var client=MinecraftClient.getInstance();
         if(world==null||client.player==null||!settings.hud||client.options.hudHidden||client.currentScreen!=null)return;
         var tr=client.textRenderer;int size=104,x=client.getWindow().getScaledWidth()-size-8,y=18;
-        ctx.fill(x-3,y-13,x+size+3,y+size+65,0xBB101920);
+        ctx.fill(x-3,y-13,x+size+3,y+size+77,0xBB101920);
         ctx.drawTextWithShadow(tr,"寻宝地图 · 北↑",x,y-11,0xFFFFFF);
         ctx.fill(x+size/2,y,x+size/2+1,y+size,0xFF354854);
         ctx.fill(x,y+size/2,x+size,y+size/2+1,0xFF354854);
@@ -108,10 +109,18 @@ public final class FinderScreen extends Screen {
         if(target!=null){
             int px=x+size/2+(int)((target.x()-player.x())*size/384.0),pz=y+size/2+(int)((target.z()-player.z())*size/384.0);
             px=Math.max(x+2,Math.min(x+size-3,px));pz=Math.max(y+2,Math.min(y+size-3,pz));
-            ctx.drawBorder(px-3,pz-3,7,7,0xFFFFFFFF);
+            if(seaPlan!=null){
+                ctx.fill(px-3,pz,px+4,pz+1,0xFF65DEFF);
+                ctx.fill(px,pz-3,px+1,pz+4,0xFF65DEFF);
+            } else ctx.drawBorder(px-3,pz-3,7,7,0xFFFFFFFF);
             ctx.drawTextWithShadow(tr,tr.trimToWidth(targetLabel+" "+direction(target),size),x,y+size+3,0xFFE08A);
             ctx.drawTextWithShadow(tr,tr.trimToWidth(coords(target),size),x,y+size+14,0xFFFFFF);
         }
+        if(target==null&&navigationStatus.startsWith("就地扫描")){
+            ctx.drawTextWithShadow(tr,"已加载，扫描中",x,y+size+3,0x65DEFF);
+            ctx.drawTextWithShadow(tr,"无需贴近导航点",x,y+size+14,0xC3D1DC);
+        }
+        ctx.drawTextWithShadow(tr,"蓝＋导航 灰·候选",x,y+size+63,0x65DEFF);
         ctx.drawTextWithShadow(tr,tr.trimToWidth((enabled?"巡查 "+survey.candidates.stream().filter(c->c.visited).count()+"/"+survey.candidates.size():"已暂停")+" · F8结果",size),x,y+size+27,0xC3D1DC);
         ctx.drawTextWithShadow(tr,tr.trimToWidth(navigationStatus,size),x,y+size+39,0xA7CFD6);
         ctx.drawTextWithShadow(tr,tr.trimToWidth(roundTracker.status(System.currentTimeMillis()),size),x,y+size+51,0xA7CFD6);

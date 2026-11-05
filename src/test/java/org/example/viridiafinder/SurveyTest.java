@@ -46,6 +46,145 @@ public final class SurveyTest {
             if(++limit>2000000)throw new AssertionError("扫描没有完成");
         }
     }
+    static void verifySeaRouteProgress() {
+        var settings=new Survey.Settings();settings.radius=1;settings.below=0;settings.above=0;
+        var source=new Survey(List.of(new Survey.Pos(8,64,8),new Survey.Pos(40,64,8),new Survey.Pos(72,64,8)),settings);
+        var fixture=new Fixture();
+        var plan=new SeaPlanner.Plan(List.of(
+            new SeaPlanner.Stop(List.of(new Survey.Pos(8,80,8)),List.of(1,2)),
+            new SeaPlanner.Stop(List.of(new Survey.Pos(8,80,8),new Survey.Pos(72,80,8)),List.of(3))),List.of(),88,64);
+        var progress=new SeaRouteProgress(plan);
+        check(progress.scanState(source,fixture).scanHere()&&!progress.scanState(source,fixture).done()
+            &&progress.advanceCompleted(source)==0,"扫描站：全部区域已加载时可原地扫描，但不能当作已经扫描完成");
+
+        // 当前已开始扫描第2个候选，不应每帧跳回分组内的第1个候选并丢弃进度。
+        source.prioritize(source.candidates.get(1));source.tick(fixture,2,Long.MAX_VALUE,x->{});
+        for(int i=0;i<4;i++)progress.prioritizeLoaded(source,fixture);
+        check(source.activeCandidateId()==2&&source.candidates.get(1).passChecked==2,
+            "扫描站：重复优先调度保留当前候选的部分扫描进度");
+        source.tick(fixture,7,Long.MAX_VALUE,x->{});
+        check(source.fullyScanned(source.candidates.get(1),fixture)&&source.candidates.get(1).checked==9
+            &&source.candidates.get(0).checked==0,"扫描站：保留进度后恰好完成剩余7格，无重复重扫");
+        source.candidates.get(1).visited=true;
+        progress.prioritizeLoaded(source,fixture);source.tick(fixture,4,Long.MAX_VALUE,x->{});
+        check(progress.advanceCompleted(source)==0&&progress.scanState(source,fixture).scanHere()
+            &&!source.fullyScanned(source.candidates.get(0),fixture),"扫描站：部分扫描仍可原地补扫，未扫描完不得换站");
+        source.tick(fixture,5,Long.MAX_VALUE,x->{});
+        source.candidates.get(0).visited=source.fullyScanned(source.candidates.get(0),fixture);
+        check(progress.advanceCompleted(source)==1&&progress.stop==1&&progress.needsRejoin&&progress.path.isEmpty(),
+            "扫描站：实际完整扫描后立即换站，旧站的航点不再保留");
+
+        fixture.unloaded.add("4,0");
+        check(!progress.scanState(source,fixture).done()&&!progress.scanState(source,fixture).scanHere()
+            &&progress.scanState(source,fixture).loaded()==0,"扫描站：下一组未加载时仍保留待检查，不标完成");
+        source.candidates.get(2).visited=true;
+        check(progress.advanceCompleted(source)==1&&progress.done()&&!progress.needsRejoin
+            &&progress.scanState(source,fixture).done(),"扫描站：已巡查记录在区块卸载后仍可完成路线");
+
+        var mixed=new Survey(List.of(new Survey.Pos(8,64,8),new Survey.Pos(15,64,8)),settings);
+        var mixedWorld=new Fixture();mixedWorld.unloaded.add("1,0");
+        var mixedPlan=new SeaPlanner.Plan(List.of(new SeaPlanner.Stop(List.of(new Survey.Pos(8,80,8)),List.of(1,2))),List.of(),88,0);
+        var mixedProgress=new SeaRouteProgress(mixedPlan);
+        pass(mixed,mixedWorld);
+        check(mixedProgress.scanState(mixed,mixedWorld).remaining()==2&&mixedProgress.scanState(mixed,mixedWorld).loaded()==1
+            &&!mixedProgress.scanState(mixed,mixedWorld).scanHere()&&!mixedProgress.scanState(mixed,mixedWorld).done()
+            &&mixed.candidates.get(1).unknown>0&&mixedProgress.advanceCompleted(mixed)==0,
+            "扫描站：候选中心已加载但边缘区块缺失时，不把混合区域当作完整加载或完成");
+
+        // 推进接口不接收玩家坐标：6至16格死区及更远距离都不能阻止完成的扫描站退出。
+        for(int distance:new int[]{8,15,50}) {
+            var atDistance=new SeaPlanner.Plan(List.of(
+                new SeaPlanner.Stop(List.of(new Survey.Pos(distance,80,0)),List.of(1)),
+                new SeaPlanner.Stop(List.of(new Survey.Pos(distance,80,0)),List.of(2)),
+                new SeaPlanner.Stop(List.of(new Survey.Pos(distance+64,80,0)),List.of(3))),List.of(),88,64);
+            source.candidates.get(2).visited=false;
+            var atProgress=new SeaRouteProgress(atDistance);atProgress.waypoint=1;
+            check(atProgress.advanceCompleted(source)==2&&atProgress.stop==2&&atProgress.waypoint==0
+                &&atProgress.needsRejoin&&atProgress.plan.stops().get(atProgress.stop).candidates().equals(List.of(3)),
+                "扫描站：已完成站点距玩家"+distance+"格时直接跳过，后续未完成站保持原顺序");
+        }
+
+        byte[] water=new byte[9*9];Arrays.fill(water,(byte)2);
+        for(int z=0;z<7;z++)water[z*9+4]=1;
+        var map=new SeaMap(0,0,4,9,9,water);
+        int current=2*9+2,destination=2*9+6;
+        var rejoin=new ArrayList<>(map.path(current,destination));
+        int oldStation=7*9+2;
+        var joinPlan=new SeaPlanner.Plan(List.of(
+            new SeaPlanner.Stop(List.of(map.point(oldStation)),List.of(1,2)),
+            new SeaPlanner.Stop(map.path(oldStation,destination),List.of(3))),List.of(),88,0);
+        var joinProgress=new SeaRouteProgress(joinPlan);joinProgress.advanceCompleted(source);
+        joinProgress.rejoined(rejoin);rejoin.clear();
+        boolean safe=!joinProgress.path.isEmpty();
+        for(int i=1;i<joinProgress.path.size();i++)safe&=map.clear(map.cell(joinProgress.path.get(i-1)),map.cell(joinProgress.path.get(i)));
+        check(safe&&!joinProgress.needsRejoin&&joinProgress.waypoint==0
+            &&joinProgress.path.get(0).equals(map.point(current))
+            &&joinProgress.path.get(joinProgress.path.size()-1).equals(map.point(destination))
+            &&joinProgress.path.stream().anyMatch(p->p.z()>=28),
+            "扫描站：跳站后从玩家当前位置沿水路绕陆地重新接入，不复用旧站起点或穿陆直线");
+        var empty=new SeaRouteProgress(new SeaPlanner.Plan(List.of(),List.of(),88,0));
+        check(empty.done()&&empty.path.isEmpty()&&empty.advanceCompleted(source)==0&&empty.scanState(source,fixture).done(),
+            "扫描站：空路线无需航点，不请求重新连接");
+    }
+    static void verifyCoverageRestartAndAudit() {
+        var audited=make(new Survey.Pos(15,64,8),1,2,3);var auditWorld=new Fixture();
+        pass(audited,auditWorld);var candidate=audited.candidates.get(0);
+        check(candidate.lastScanAt>0&&candidate.lastRadius==1&&candidate.lastBelow==2&&candidate.lastAbove==3
+            &&candidate.lastChecked==54&&candidate.lastUnknown==0&&candidate.lastScanComplete,
+            "扫描留档：完整扫描保存实际范围、54格读取数、时间与完成状态");
+        var gson=new Gson();
+        var restored=gson.fromJson(gson.toJson(candidate),Survey.Candidate.class);
+        check(restored.lastScanAt==candidate.lastScanAt&&restored.lastRadius==1&&restored.lastBelow==2&&restored.lastAbove==3
+            &&restored.lastChecked==54&&restored.lastUnknown==0&&restored.lastScanComplete
+            &&restored.completedAt==0&&restored.checked==0&&!audited.fullyScanned(restored,auditWorld),
+            "扫描留档：Gson保留历史证据，但读档不成为当前已加载区域的新扫描");
+        auditWorld.unloaded.add("1,0");audited.invalidateChunk(1,0);
+        check(candidate.lastScanComplete&&candidate.lastChecked==54&&!audited.fullyScanned(candidate,auditWorld),
+            "扫描留档：区块失效后的历史完整扫描不能覆盖实时失效状态");
+        pass(audited,auditWorld);
+        check(candidate.lastScanAt>0&&candidate.lastRadius==1&&candidate.lastBelow==2&&candidate.lastAbove==3
+            &&candidate.lastChecked==36&&candidate.lastUnknown==18&&!candidate.lastScanComplete
+            &&!audited.fullyScanned(candidate,auditWorld),
+            "扫描留档：缺失边缘区块记录36格已查和18格未知，不能保存为完整扫描");
+        restored=gson.fromJson(gson.toJson(candidate),Survey.Candidate.class);
+        check(restored.lastChecked==36&&restored.lastUnknown==18&&!restored.lastScanComplete
+            &&!audited.fullyScanned(restored,new Fixture()),
+            "扫描留档：部分扫描读档后即使区块全部加载，也不变成完整扫描");
+
+        var settings=new Survey.Settings();settings.radius=1;settings.below=0;settings.above=0;
+        var source=new Survey(List.of(new Survey.Pos(8,64,8),new Survey.Pos(40,64,8),new Survey.Pos(72,64,8)),settings);
+        var fixture=new Fixture();
+        for(var c:source.candidates)fixture.blocks.put(c.pos,Blocks.CHEST.getDefaultState());
+        var suspect=new Survey.Pos(9,64,8);fixture.blocks.put(suspect,Blocks.TRAPPED_CHEST.getDefaultState());
+        pass(source,fixture);
+        source.candidates.get(0).found.get(suspect.key()).mark=Survey.Mark.SUSPECT;
+        source.candidates.get(1).found.get(source.candidates.get(1).pos.key()).mark=Survey.Mark.CONFIRMED;
+        source.candidates.get(2).found.get(source.candidates.get(2).pos.key()).mark=Survey.Mark.CLAIMED;
+        for(var c:source.candidates)c.visited=true;
+        String originalFound=gson.toJson(source.candidates.stream().map(c->c.found).toList());
+        source.tick(fixture,2,Long.MAX_VALUE,x->{});
+        settings.radius=2;settings.below=1;settings.above=1;
+        source.restartCoverage();
+        check(!source.candidates.get(0).visited&&!source.candidates.get(1).visited&&source.candidates.get(2).visited,
+            "范围重扫：普通、疑似、确认容器重新待查，只有人工已领取候选保留已巡查");
+        check(source.activeCandidateId()==1&&source.candidates.stream().allMatch(c->c.checked==0&&c.unknown==0
+            &&c.passChecked==0&&c.passUnknown==0&&c.completedAt==0&&!c.passInvalidated),
+            "范围重扫：清空实时完整及部分扫描计数，从首个候选重新开始");
+        check(originalFound.equals(gson.toJson(source.candidates.stream().map(c->c.found).toList())),
+            "范围重扫：四种人工状态及全部容器记录原样保留");
+        check(source.candidates.get(0).lastScanComplete&&source.candidates.get(0).lastRadius==1
+            &&source.candidates.get(0).lastChecked==9&&!source.fullyScanned(source.candidates.get(0),fixture),
+            "范围重扫：保留旧范围扫描留档，不把旧范围证据当作新范围已完成");
+        var pending=source.route(new Survey.Pos(8,64,8));
+        check(pending.size()==2&&new HashSet<>(pending.stream().map(c->c.id).toList()).equals(Set.of(1,2)),
+            "范围重扫：全部巡查后修改范围仍能生成待查路线，普通容器不当作已领取");
+        pass(source,fixture);
+        check(source.candidates.get(0).lastRadius==2&&source.candidates.get(0).lastBelow==1
+            &&source.candidates.get(0).lastAbove==1&&source.candidates.get(0).lastChecked==75
+            &&source.candidates.get(0).lastUnknown==0&&source.candidates.get(0).lastScanComplete
+            &&source.fullyScanned(source.candidates.get(0),fixture),
+            "范围重扫：新范围重新读取75格后才生成新的完整扫描证据");
+    }
     public static void main(String[] args)throws Exception {
         SharedConstants.createGameVersion();Bootstrap.initialize();
         check(ContainerTypes.identify(Blocks.CHEST.getDefaultState())==Survey.Kind.CHEST,"Minecraft真实普通箱子方块状态");
@@ -200,7 +339,7 @@ public final class SurveyTest {
         var timing=new RiptideClock();timing.started(0);
         check(!timing.ready(249_999_999L)&&timing.ready(250_000_000L),"激流：失败尝试保留250毫秒重试限速");
         timing.released(3_000_000_000L);
-        check(!timing.ready(3_049_999_999L)&&timing.ready(3_050_000_000L),"激流：正常释放后只保留50毫秒调度间隔，不追赶连发");
+        check(!timing.ready(3_149_999_999L)&&timing.ready(3_150_000_000L),"激流：正常释放后保留150毫秒稳定间隔，不追赶连发");
         // Force client mixin application in the Fabric test classloader, without opening a window.
         var mcType=Class.forName("net.minecraft.client.MinecraftClient",false,SurveyTest.class.getClassLoader());
         check(Arrays.stream(mcType.getDeclaredMethods()).anyMatch(m->m.getName().contains("maintainOwnedCharge")),"客户端输入Mixin在Fabric类加载器中成功应用（非窗口实测）");
@@ -288,6 +427,9 @@ public final class SurveyTest {
         var smallIds=new HashSet<Integer>(smallerSea.unresolved());for(var stop:smallerSea.stops())smallIds.addAll(stop.candidates());
         check(!smallerSea.stops().isEmpty()&&smallIds.size()==169,"覆盖海路：较小加载范围仍保留169候选，无静默漏点");
         report.add(String.format(Locale.ROOT,"8区块完整加载圈假设下，104格覆盖半径：%d扫描站，海路%.1f格，未覆盖%s；均须以游戏实际扫描确认。",smallerSea.stops().size(),smallerSea.length(),smallerSea.unresolved()));
+        verifySeaRouteProgress();
+        verifyCoverageRestartAndAudit();
+        TravelAssistTest.run(SurveyTest::check);
         Files.write(Path.of("扫描验证结果.txt"),report,StandardCharsets.UTF_8);
         System.out.println("全部通过："+report.stream().filter(s->s.startsWith("通过：")).count()+"项；使用真实Minecraft方块状态和模拟区块视图，未连接服务器。");
     }

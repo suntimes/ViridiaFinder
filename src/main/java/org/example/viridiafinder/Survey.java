@@ -56,6 +56,10 @@ public final class Survey {
         public transient int checked, unknown, passChecked, passUnknown;
         public transient long completedAt;
         public transient boolean passInvalidated;
+        // Historical scan audit only; never substitutes for a fresh client observation.
+        public long lastScanAt;
+        public int lastRadius,lastBelow,lastAbove,lastChecked,lastUnknown;
+        public boolean lastScanComplete;
         public Candidate(int id, Pos pos) { this.id=id; this.pos=pos; }
     }
     public final List<Candidate> candidates;
@@ -107,7 +111,11 @@ public final class Survey {
         if (++dz>settings.radius) { dz=-settings.radius; dx++; }
         if (dx>settings.radius) {
             c.checked=c.passChecked; c.unknown=c.passUnknown; c.passChecked=0; c.passUnknown=0;
-            c.completedAt=c.passInvalidated?0:System.currentTimeMillis();
+            c.lastScanAt=System.currentTimeMillis();
+            c.lastRadius=settings.radius;c.lastBelow=settings.below;c.lastAbove=settings.above;
+            c.lastChecked=c.checked;c.lastUnknown=c.unknown;
+            c.lastScanComplete=!c.passInvalidated&&c.checked>0&&c.unknown==0;
+            c.completedAt=c.passInvalidated?0:c.lastScanAt;
             c.passInvalidated=false;
             positioned=false; index=(index+1)%candidates.size();
             if (index==0) passes++;
@@ -116,6 +124,10 @@ public final class Survey {
     public void resetProgress() {
         positioned=false; index=0;
         for(Candidate c:candidates) { c.checked=0; c.unknown=0; c.passChecked=0; c.passUnknown=0; c.completedAt=0; c.passInvalidated=false; }
+    }
+    public void restartCoverage() {
+        resetProgress();
+        for(var c:candidates)c.visited=c.found.values().stream().anyMatch(f->f.mark==Mark.CLAIMED);
     }
     public int activeCandidateId() { return candidates.isEmpty()?0:candidates.get(index).id; }
     public void prioritize(Candidate c) {
@@ -136,6 +148,9 @@ public final class Survey {
     }
     public boolean fullyScanned(Candidate c,View view) {
         if(c.completedAt==0||c.unknown!=0||c.checked==0)return false;
+        return areaLoaded(c,view);
+    }
+    public boolean areaLoaded(Candidate c,View view) {
         for(int x=(c.pos.x-settings.radius)>>4;x<=(c.pos.x+settings.radius)>>4;x++)
             for(int z=(c.pos.z-settings.radius)>>4;z<=(c.pos.z+settings.radius)>>4;z++)
                 if(!view.loaded(x,z))return false;

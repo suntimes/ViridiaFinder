@@ -11,7 +11,7 @@ import static org.example.viridiafinder.ViridiaFinder.*;
 public final class FinderScreen extends Screen {
     int candidate=0, page=0;
     String selected="";
-    FinderScreen(){super(Text.literal("维里迪亚寻宝 0.4.2"));}
+    FinderScreen(){super(Text.literal("维里迪亚寻宝 0.4.3"));}
     Survey.Candidate current(){return survey.candidates.get(candidate);}
     List<Survey.Found> rows(){return visible(current());}
     int perPage(){return Math.max(1,(height-202)/40);}
@@ -43,7 +43,7 @@ public final class FinderScreen extends Screen {
     }
     @Override public void render(DrawContext ctx,int mx,int my,float delta){
         ctx.fill(0,0,width,height,0xED101920);
-        line(ctx,"维里迪亚寻宝 0.4.2｜"+(enabled?"正在扫描":"已暂停")+"｜实例："+instance,8,10,0xFFFFFF);
+        line(ctx,"维里迪亚寻宝 0.4.3｜"+(enabled?"正在扫描":"已暂停")+"｜实例："+instance,8,10,0xFFFFFF);
         var c=current();var list=rows();
         line(ctx,"候选 #"+c.id+" /169："+coords(c.pos)+(c.visited?"（已巡查）":"（未巡查）"),8,56,0xD4E8ED);
         line(ctx,"中心区块："+(view().loaded(c.pos.x()>>4,c.pos.z()>>4)?"已加载":"未加载")+"；"+survey.coverage(c,view()),8,69,0xA7CFD6);
@@ -83,6 +83,49 @@ public final class FinderScreen extends Screen {
             default->switch(f.kind){case CHEST->0xFFE08A;case TRAPPED->0xFF826B;case BARREL->0x89ADFF;default->0xAAAAAA;};
         };
     }
+    private static int minimapTick = -1;
+    private static Survey minimapSurvey;
+    private static List<SurveyMinimap.Dot> minimapDots = List.of();
+
+    private static void drawMinimap(DrawContext ctx, int left, int top) {
+        if (minimapTick != ticks || minimapSurvey != survey) {
+            minimapDots = SurveyMinimap.dots(playerPos(), survey);
+            minimapTick = ticks;
+            minimapSurvey = survey;
+        }
+
+        int size = SurveyMinimap.SIZE;
+        int cx = left + SurveyMinimap.CENTER;
+        int cy = top + SurveyMinimap.CENTER;
+        ctx.fill(left, top, left + size, top + size, 0xB0101920);
+        ctx.fill(cx, top, cx + 1, top + size, 0x66445663);
+        ctx.fill(left, cy, left + size, cy + 1, 0x66445663);
+
+        ctx.enableScissor(left, top, left + size, top + size);
+        try {
+            for (SurveyMinimap.Dot dot : minimapDots) {
+                int x = left + dot.x();
+                int y = top + dot.y();
+                var style = dot.style();
+                if (!style.container) {
+                    ctx.fill(x, y, x + 1, y + 1, style.color);
+                } else if (style.historical) {
+                    ctx.drawBorder(x - 2, y - 2, 5, 5, style.color);
+                } else {
+                    ctx.fill(x - 1, y - 1, x + 2, y + 2, style.color);
+                }
+            }
+        } finally {
+            ctx.disableScissor();
+        }
+
+        // Keep the centre clear so a chest under the player is still visible.
+        ctx.fill(cx - 4, cy, cx - 2, cy + 1, 0xFFFFFFFF);
+        ctx.fill(cx + 3, cy, cx + 5, cy + 1, 0xFFFFFFFF);
+        ctx.fill(cx, cy - 4, cx + 1, cy - 2, 0xFFFFFFFF);
+        ctx.fill(cx, cy + 3, cx + 1, cy + 5, 0xFFFFFFFF);
+    }
+
     static void hud(DrawContext ctx) {
         var client = MinecraftClient.getInstance();
         if (!enabled || !settings.hud || world == null || client.player == null
@@ -90,17 +133,17 @@ public final class FinderScreen extends Screen {
 
         var lines = CompactHud.lines(playerPos(), target, survey);
         var renderer = client.textRenderer;
-        int width = 0;
-        for (String line : lines) width = Math.max(width, renderer.getWidth(line));
+        int right = client.getWindow().getScaledWidth() - 5;
+        int left = right - SurveyMinimap.SIZE;
+        int mapTop = 5;
+        drawMinimap(ctx, left, mapTop);
 
-        int right = client.getWindow().getScaledWidth() - 7;
-        int top = 7;
+        int textTop = mapTop + SurveyMinimap.SIZE + 2;
         int spacing = renderer.fontHeight + 2;
-        ctx.fill(right - width - 3, top - 3, right + 3,
-                top + spacing * lines.size(), 0xAA101920);
+        ctx.fill(left, mapTop + SurveyMinimap.SIZE, right, textTop + spacing * lines.size(), 0xAA101920);
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
-            ctx.drawTextWithShadow(renderer, line, right - renderer.getWidth(line), top + i * spacing,
+            ctx.drawTextWithShadow(renderer, line, right - 2 - renderer.getWidth(line), textTop + i * spacing,
                     i == lines.size() - 1 ? 0xC3D1DC : 0xFFE08A);
         }
     }

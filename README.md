@@ -1,11 +1,12 @@
-# 维里迪亚寻宝 Viridia Finder 0.4.2
+# 维里迪亚寻宝 Viridia Finder 0.4.3
 
 Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，退出游戏后将发布 JAR 放入 mods，删除旧版同名模组 JAR。无需服务端安装。安装包请从右侧 Releases 下载。
 
 ## 搜寻提示
 
-- 右上角第一行显示当前搜索区域的方位和水平直线距离，例如“西北 73 格”。转弯航点只用于内部海路计算。
-- 第二行显示剩余待巡查的候选数，例如“剩余 32/169”。就地扫描或等待目标时只显示剩余数量。
+- 小地图以玩家为中心，朝上为北。灰色小点表示附近候选位置，暗灰表示本轮已巡查。黄色表示普通箱，橙红色表示陷阱箱。手动标记后，紫色表示疑似宝藏，青色表示已确认宝藏。空心标记表示历史记录，绿色空心标记表示已领取。
+- 小地图下方第一行显示当前搜索区域的方位和水平直线距离，例如“西北 73 格”。转弯航点只用于内部海路计算。
+- 第二行显示剩余待巡查的候选数，例如“剩余 32/169”。就地扫描或等待目标时，文字区只显示剩余数量。
 - 当前站候选区域已经加载时就地扫描；扫完立即换站，无需精确贴近航点。
 - 自动换站保持原巡查顺序，只重新连接当前海段，减少全局重排造成的折返。
 - 已加载但尚未扫完不会误判为加载不足，也不会因此缩小覆盖范围。
@@ -35,7 +36,7 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 
 使用 Gradle 8.7 和 JDK 17：`gradle build`。首次构建需要下载依赖。Loom 1.6.12，Fabric Loader 0.15.11，Fabric API 0.97.2+1.20.4，Yarn 1.20.4+build.3。
 
-`check` 调用 `verifySurvey` 可执行验证程序，通过 Fabric Knot 加载真实 Minecraft 类和混入；未采用 JUnit 测试发现。报告生成于 build/verification。0.4.2 已通过150项程序验证；尚未连接服务器验证动作效果、搜索耗时和HUD兼容性。
+`check` 调用 `verifySurvey` 可执行验证程序，通过 Fabric Knot 加载真实 Minecraft 类和混入；未采用 JUnit 测试发现。报告生成于 build/verification。0.4.3 已通过162项程序验证；尚未连接服务器验证动作效果、搜索耗时和HUD兼容性。
 
 `tools/import_xaero_water.py` 用于读取本地 Xaero 地表区域并生成水域资源，仅支持已检查的格式版本。`tools/render_water_route.py` 用于生成路线预览。运行脚本时先查看参数；导入后的资源需替换 src/main/resources/assets/viridiafinder/isles-water.bin 并重新构建。没有实时 Xaero 依赖。
 
@@ -50,6 +51,6 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 ## 下载
 
 - [正式版本与安装 JAR](https://github.com/suntimes/ViridiaFinder/releases/latest)
-- [直接下载 0.4.2 JAR](https://github.com/suntimes/ViridiaFinder/releases/download/v0.4.2/viridia-finder-0.4.2.jar)
+- [直接下载 0.4.3 JAR](https://github.com/suntimes/ViridiaFinder/releases/download/v0.4.3/viridia-finder-0.4.3.jar)
 
 源码可通过 Code → Download ZIP 或 Release 页面中的 Source code 下载。安装只需要 JAR，无需下载源码。

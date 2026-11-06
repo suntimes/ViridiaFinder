@@ -3,7 +3,7 @@
   "id": "viridiafinder",
   "version": "${version}",
   "name": "维里迪亚寻宝（Viridia Finder）",
-  "description": "持续扫描已加载候选区域中的普通箱子和陷阱箱，提供中文地图、容器记录与巡查路线。容器不等于本轮宝藏。",
+  "description": "持续扫描已加载候选区域中的普通箱子和陷阱箱，提供中文方向提示、容器记录与巡查路线。容器不等于本轮宝藏。",
   "environment": "client",
   "mixins": ["viridiafinder.mixins.json"],
   "entrypoints": { "client": ["org.example.viridiafinder.ViridiaFinder"] },

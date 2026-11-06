@@ -123,7 +123,7 @@ public final class ViridiaFinder implements ClientModInitializer {
             root.then(literal("新一轮").executes(c->{newRound(false);return 1;}));
             root.then(literal("结果").executes(c->{openRequested=true;return 1;}));
             root.then(literal("导出").executes(c->{export();return 1;}));
-            root.then(literal("地图").executes(c->{settings.hud=!settings.hud;save();message("地图"+(settings.hud?"开启":"关闭"));return 1;}));
+            root.then(literal("地图").executes(c->{settings.hud=!settings.hud;save();message("搜寻提示"+(settings.hud?"开启":"关闭"));return 1;}));
             root.then(literal("木桶").executes(c->{message("本版本仅检索普通箱子和陷阱箱，木桶识别已移除。");return 1;}));
             root.then(literal("范围").then(argument("水平半径",IntegerArgumentType.integer(0,64)).then(argument("向下高度",IntegerArgumentType.integer(0,128)).then(argument("向上高度",IntegerArgumentType.integer(0,128)).executes(c->{
                 settings.radius=IntegerArgumentType.getInteger(c,"水平半径");settings.below=IntegerArgumentType.getInteger(c,"向下高度");settings.above=IntegerArgumentType.getInteger(c,"向上高度");restartCoverage();message("范围已更新，已重建未巡查列表；保留容器记录和已领取标记。");return 1;
@@ -134,7 +134,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         });
     }
     static void help() {
-        message("按F7同时开启扫描、箱子高亮和寻宝地图；再次按F7全部关闭。");
+        message("按F7同时开启扫描、箱子高亮和搜寻提示；再次按F7全部关闭。");
         message("/viridiafinder 检索：快速检索已加载候选区域，并列出192格内最近的容器");
         message("按F8或输入 /viridiafinder 打开中文结果界面");
         message("/viridiafinder 开启、关闭、状态、路线、地图、结果、导出、新一轮");
@@ -185,8 +185,8 @@ public final class ViridiaFinder implements ClientModInitializer {
     static void tick(MinecraftClient client) {
         syncWorld(client);
         while(highlightKey.wasPressed()){
-            if(enabled){TravelAssist.stop(client);TravelAssist.riptide=false;TravelAssist.swim=false;enabled=false;seaPlan=null;seaProgress=null;routePlan=null;target=null;targetLabel="";settings.highlight=false;settings.hud=false;seaPlanning=false;seaStartPending=0;routeRequest++;searchPending=0;newBoxes.clear();save();message("扫描、箱子高亮和寻宝地图已关闭");}
-            else {enable();if(enabled){settings.highlight=true;settings.hud=true;seaStartPending=40;navigationStatus="测量已加载范围";save();message("扫描、箱子高亮和寻宝地图已开启");}}
+            if(enabled){TravelAssist.stop(client);TravelAssist.riptide=false;TravelAssist.swim=false;enabled=false;seaPlan=null;seaProgress=null;routePlan=null;target=null;targetLabel="";settings.highlight=false;settings.hud=false;seaPlanning=false;seaStartPending=0;routeRequest++;searchPending=0;newBoxes.clear();save();message("扫描、箱子高亮和搜寻提示已关闭");}
+            else {enable();if(enabled){settings.highlight=true;settings.hud=true;seaStartPending=40;navigationStatus="测量已加载范围";save();message("扫描、箱子高亮和搜寻提示已开启");}}
         }
         while(key.wasPressed()) openRequested=true;
         if(openRequested) {openRequested=false;if(client.world!=null)client.setScreen(new FinderScreen());}
@@ -363,13 +363,12 @@ public final class ViridiaFinder implements ClientModInitializer {
             }
         }
         if(progress.waypoint<path.size()){
-            target=path.get(progress.waypoint);
-            targetLabel=!seaMap.water(currentCell)&&progress.waypoint==0?"海面入口":
-                progress.waypoint==path.size()-1?"站"+(progress.stop+1)+"/"+seaPlan.stops().size():"绕行航点";
+            target=progress.destination();
+            targetLabel="搜索区域";
             navigationStatus="待加载"+(scan.remaining()-scan.loaded())+"点；扫描中";
             seaWait=0;return;
         }
-        target=path.get(path.size()-1);targetLabel="站"+(progress.stop+1)+"/"+seaPlan.stops().size();
+        target=progress.destination();targetLabel="搜索区域";
         navigationStatus="待加载"+(scan.remaining()-scan.loaded())+"点";
         if(RouteOptimizer.distance(player,target)>24){rejoinSeaRoute(null);return;}
         // Only reposition toward a missing part of this station; never reorder the remaining tour.
@@ -386,7 +385,8 @@ public final class ViridiaFinder implements ClientModInitializer {
         var start=playerPos();var station=plan.stops().get(progress.stop);
         var existing=progress.path.isEmpty()?station.path():progress.path;
         var destination=existing.get(existing.size()-1);
-        int request=++routeRequest;lastSeaReplan=ticks;seaPlanning=true;target=null;
+        int request=++routeRequest;lastSeaReplan=ticks;seaPlanning=true;
+        target = approach == null ? destination : null;
         navigationStatus="连接下一海段，保持站序";
         java.util.concurrent.CompletableFuture.supplyAsync(()->{
             int from=map.nearest(start,256),to=map.cell(destination);

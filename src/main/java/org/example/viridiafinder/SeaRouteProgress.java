@@ -61,6 +61,10 @@ final class SeaRouteProgress {
         }
     }
 
+    Survey.Pos destination() {
+        return done() || path.isEmpty() ? null : path.get(path.size() - 1);
+    }
+
     void rejoined(List<Survey.Pos> path) {
         this.path=List.copyOf(path);waypoint=0;needsRejoin=false;
     }

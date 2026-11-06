@@ -1,0 +1,86 @@
+name: 发布 0.5.0 安装包
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-0.5.0.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-0.5.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 校验原版 JAR 并发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, os, time, urllib.request, urllib.error, urllib.parse
+          repo = os.environ['REPOSITORY']
+          assert repo == 'suntimes/ViridiaFinder'
+          api = 'https://api.github.com/repos/' + repo
+          name = 'viridia-finder-0.5.0.jar'
+          expected = '009e25245a509c2b741d6995c5000668be37f78dcbe4049e9d48302930e23ca8'
+          def request(url, method='GET', data=None, binary=False):
+              assert urllib.parse.urlparse(url).hostname in ('api.github.com', 'uploads.github.com')
+              headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/octet-stream' if binary else 'application/json'}
+              payload = data if binary else (json.dumps(data).encode() if data is not None else None)
+              with urllib.request.urlopen(urllib.request.Request(url, data=payload, headers=headers, method=method), timeout=60) as response:
+                  return json.load(response)
+          body = """适用于 Minecraft 1.20.4 Fabric 客户端，需要 Fabric API 和 Java 17 或以上。
+
+          **F8 → 从当前位置重算路线**。从玩家按下按钮的位置规划剩余候选，比较多种水上访问顺序与停靠点。以 X=-763、Z=1321 起步、完整10圈、水平扫描范围±16 的海图测试中，全169点航程由34,102.5格缩至23,874.6格（约30%）。实测的是静态海图航程，实际耗时随游速和区块加载变化。
+
+          **F8 → 自动航行**。入水后沿海段转向并游泳，长直段可使用快捷栏中的激流三叉戟，每次尝试至少间隔4秒。手动转向、移动或换槽可接管。自动航行默认关闭，多人服务器请先取得该服对这些自动操作的明确许可。
+
+          详细记录、扩大复查和设置从 F8 首页进入。小地图继续显示候选小点、箱子与人工标记。下载 JAR 后退出游戏替换旧版。
+
+          195项程序检查通过，服务器内游泳、激流和实际搜索用时待实测。
+          """
+          matches = [r for r in request(api + '/releases?per_page=100') if r['tag_name'] == 'v0.5.0']
+          assert len(matches) <= 1
+          release = matches[0] if matches else None
+          if release and not release['draft']:
+              with urllib.request.urlopen('https://github.com/' + repo + '/releases/download/v0.5.0/' + name, timeout=60) as response:
+                  jar = response.read()
+          else:
+              jar = base64.b64decode(request(api + '/git/blobs/24d193557af85b73d9d2107a443a41065220a7e0')['content'])
+          assert hashlib.sha256(jar).hexdigest() == expected, 'JAR checksum mismatch'
+          for attempt in range(3):
+              if release:
+                  break
+              try:
+                  release = request(api + '/releases', 'POST', {'tag_name': 'v0.5.0', 'target_commitish': os.environ['TARGET_SHA'], 'name': '维里迪亚寻宝 0.5.0', 'body': body, 'draft': True, 'prerelease': False})
+              except urllib.error.HTTPError as error:
+                  if error.code < 500 or attempt == 2:
+                      raise
+                  time.sleep(3)
+                  matches = [r for r in request(api + '/releases?per_page=100') if r['tag_name'] == 'v0.5.0']
+                  assert len(matches) <= 1
+                  release = matches[0] if matches else None
+          assets = {a['name']: a for a in release.get('assets', [])}
+          uploads = {name: jar, 'SHA256SUMS.txt': (expected + '  ' + name + '\n').encode()}
+          for asset_name, content in uploads.items():
+              digest = 'sha256:' + hashlib.sha256(content).hexdigest()
+              existing = assets.get(asset_name)
+              if existing:
+                  assert existing['state'] == 'uploaded' and existing['size'] == len(content)
+                  assert existing.get('digest') == digest, 'Existing asset differs; refusing to overwrite'
+                  continue
+              url = release['upload_url'].split('{')[0] + '?name=' + urllib.parse.quote(asset_name)
+              asset = request(url, 'POST', content, binary=True)
+              assert asset['state'] == 'uploaded' and asset['size'] == len(content)
+              assert asset.get('digest') == digest, 'Uploaded asset checksum mismatch'
+          release = request(api + '/releases/' + str(release['id']), 'PATCH', {'draft': False, 'make_latest': 'true'})
+          print(release['html_url'])
+          PY

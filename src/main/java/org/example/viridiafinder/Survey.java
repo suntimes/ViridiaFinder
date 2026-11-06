@@ -32,7 +32,9 @@ public final class Survey {
         public boolean barrels = false, hud = true;
         public boolean highlight = true;
         public boolean autoRound = true;
+        public Set<String> movementServers = new HashSet<>();
         public void validate() {
+            if(movementServers == null) movementServers = new HashSet<>();
             barrels = false; // 旧配置兼容：不再检索木桶。
             radius = Math.max(0, Math.min(64, radius));
             below = Math.max(0, Math.min(128, below));

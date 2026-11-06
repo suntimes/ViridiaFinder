@@ -8,35 +8,59 @@ import static org.example.viridiafinder.ViridiaFinder.*;
 
 public final class AssistScreen extends Screen {
     private final Screen parent;
-    AssistScreen(Screen parent){super(Text.literal("轮次与移动辅助"));this.parent=parent;}
-    private void button(String name,int y,Runnable action){
-        addDrawableChild(ButtonWidget.builder(Text.literal(name),b->{action.run();clearAndInit();})
-            .dimensions(Math.max(8,width/2-160),y,Math.min(320,width-16),20).build());
+    private int left, top;
+
+    AssistScreen(Screen parent) {
+        super(Text.literal("寻宝设置"));
+        this.parent = parent;
     }
-    @Override protected void init(){
-        button("依据之眼更新轮次："+(settings.autoRound?"开启":"关闭"),55,()->{settings.autoRound=!settings.autoRound;save();});
-        button("手动开始新一轮（旧记录留档）",80,()->newRound(false));
-        button("连续激流（正常蓄力）："+(TravelAssist.riptide?"开启":"关闭"),110,()->{
-            TravelAssist.riptide=!TravelAssist.riptide;if(!TravelAssist.riptide)TravelAssist.stop(client);
+
+    private void button(String name, int x, int y, int w, Runnable action) {
+        addDrawableChild(ButtonWidget.builder(Text.literal(name), b -> action.run())
+                .dimensions(x,y,w,20).build());
+    }
+
+    @Override protected void init() {
+        left = width/2-134;
+        top = Math.max(6,(height-169)/2);
+        button("之眼自动更新轮次"+(settings.autoRound?" · 开":" · 关"),left,top+28,132,()->{
+            settings.autoRound=!settings.autoRound;save();clearAndInit();
         });
-        button("自动向前游泳："+(TravelAssist.swim?"开启":"关闭"),135,()->TravelAssist.swim=!TravelAssist.swim);
-        button("返回",height-28,()->client.setScreen(parent));
+        button("手动开始新一轮",left+136,top+28,132,()->newRound(false));
+        button("连续激流"+(TravelAssist.riptide?" · 开":" · 关"),left,top+53,132,()->toggleAssist(true));
+        button("向前游泳"+(TravelAssist.swim?" · 开":" · 关"),left+136,top+53,132,()->toggleAssist(false));
+        if (!client.isInSingleplayer() && movementAutomationAllowed(client)) {
+            button("撤销本服移动辅助许可",left,top+78,268,()->{revokeMovementPermission();clearAndInit();});
+        }
+        button("返回",left,top+137,268,this::close);
     }
-    private void line(DrawContext ctx,String text,int y,int color){
-        ctx.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(text,width-16),8,y,color);
+
+    private void toggleAssist(boolean trident) {
+        if (trident && TravelAssist.riptide) {
+            TravelAssist.riptide=false;TravelAssist.stop(client);
+        } else if (!trident && TravelAssist.swim) {
+            TravelAssist.swim=false;
+        } else {
+            requestMovementPermission(this,()->{
+                TravelAssist.setAutoSail(client,false);
+                if (trident) TravelAssist.riptide=true; else TravelAssist.swim=true;
+                clearAndInit();
+            });
+            return;
+        }
+        clearAndInit();
     }
-    @Override public void render(DrawContext ctx,int mx,int my,float delta){
-        ctx.fill(0,0,width,height,0xF0101920);
-        line(ctx,"维里迪亚寻宝 · 轮次与移动辅助",10,0xFFFFFF);
-        line(ctx,roundTracker.status(System.currentTimeMillis()),27,0xFFE08A);
-        line(ctx,"主手持之眼左键查询；预计到点不会直接清空。",40,0xB8C0CD);
-        line(ctx,"关闭此界面后生效；自动游泳跟随你的视角。",162,0xFFFFFF);
-        line(ctx,"激流需要主手激流三叉戟及原版水／雨条件。",175,0xB8C0CD);
-        line(ctx,"菜单、失焦、后退、潜行或攻击时暂停；换世界关闭。",188,0xB8C0CD);
-        line(ctx,"停止会结束当前蓄力，可能释放最后一次激流。",201,0xFFE08A);
-        if(height>=250)line(ctx,"只维持正常水中疾跑，不强制姿态；服务器许可未核实。",214,0xFFE08A);
+
+    @Override public void render(DrawContext ctx, int mx, int my, float delta) {
+        ctx.fill(0,0,width,height,0xE5101920);
+        ctx.drawTextWithShadow(textRenderer,getTitle(),left,top,0xFFFFFF);
+        ctx.drawTextWithShadow(textRenderer,roundTracker.status(System.currentTimeMillis()),left,top+14,0xFFE08A);
+        ctx.drawTextWithShadow(textRenderer,"自动航行中，激流尝试至少间隔 4 秒。",left,top+105,0xCCDBDF);
+        String status = TravelAssist.sailingStatus();
+        ctx.drawTextWithShadow(textRenderer,textRenderer.trimToWidth(status,268),left,top+118,0xA5B5BC);
         super.render(ctx,mx,my,delta);
     }
-    @Override public void close(){client.setScreen(parent);}
-    @Override public boolean shouldPause(){return false;}
+
+    @Override public void close() { client.setScreen(parent); }
+    @Override public boolean shouldPause() { return false; }
 }

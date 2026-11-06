@@ -33,6 +33,13 @@ public final class SeaMap {
         for(int i=0;i<cells.length;i++)if(cells[i]==2&&labels[i]!=best)cells[i]=1;
     }
     public Survey.Pos point(int i){return new Survey.Pos(x0+(i%w)*step+step/2,80,z0+(i/w)*step+step/2);}
+    int oceanEntry(Survey.Pos start) {
+        if (cell(start) < 0) return -1;
+        int nearby = nearest(start, 256);
+        if (nearby >= 0) return nearby;
+        int mapDiagonal = (int)Math.ceil(step * Math.hypot(w, h));
+        return nearest(start, mapDiagonal);
+    }
     public int nearest(Survey.Pos p,int max){
         int center=cell(p);if(water(center))return center;
         int gx=Math.floorDiv(p.x()-x0,step),gz=Math.floorDiv(p.z()-z0,step),best=-1;double distance=Double.POSITIVE_INFINITY;

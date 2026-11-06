@@ -43,12 +43,15 @@ public final class ViridiaFinder implements ClientModInitializer {
     static Survey.RoutePlan routePlan;
     static FastSurvey fastSurvey;
     static int searchPending;
+    private static boolean recordsRequested;
     static RoundTracker roundTracker=new RoundTracker();
 
     static final Set<String> newBoxes=new HashSet<>();
     static int ticks;
     static int routeRequest;
     static SeaMap seaMap;
+    static Survey.Pos routeOrigin;
+    private static String movementServerKey = "";
     static boolean seaPlanning;
     static int lastSeaReplan;
     static SeaPlanner.Plan seaPlan;
@@ -116,12 +119,12 @@ public final class ViridiaFinder implements ClientModInitializer {
             root.then(literal("检索").executes(c->{settings.highlight=true;enable();searchPending=40;message("快速检索已开启，约2秒后列出当前发现的近处容器；未加载区域仍未知。");return 1;}));
             root.then(literal("取消高亮").executes(c->{settings.highlight=false;save();message("箱子边框已隐藏");return 1;}));
             for(String name:List.of("开启","on")) root.then(literal(name).executes(c->{enable();return 1;}));
-            for(String name:List.of("关闭","off")) root.then(literal(name).executes(c->{enabled=false;save();message("扫描已关闭");return 1;}));
+            for(String name:List.of("关闭","off")) root.then(literal(name).executes(c->{stopSearch();return 1;}));
             for(String name:List.of("状态","status")) root.then(literal(name).executes(c->{message("扫描"+(enabled?"开启":"关闭")+"；候选169；已完成轮询"+survey.passes+"轮；范围水平±"+settings.radius+"，向下"+settings.below+"，向上"+settings.above);return 1;}));
             for(String name:List.of("路线","route")) root.then(literal(name).executes(c->{route();return 1;}));
             root.then(literal("复查").executes(c->{widenReview();return 1;}));
             root.then(literal("新一轮").executes(c->{newRound(false);return 1;}));
-            root.then(literal("结果").executes(c->{openRequested=true;return 1;}));
+            root.then(literal("结果").executes(c->{recordsRequested=true;return 1;}));
             root.then(literal("导出").executes(c->{export();return 1;}));
             root.then(literal("地图").executes(c->{settings.hud=!settings.hud;save();message("搜寻提示"+(settings.hud?"开启":"关闭"));return 1;}));
             root.then(literal("木桶").executes(c->{message("本版本仅检索普通箱子和陷阱箱，木桶识别已移除。");return 1;}));
@@ -136,7 +139,7 @@ public final class ViridiaFinder implements ClientModInitializer {
     static void help() {
         message("按F7同时开启扫描、箱子高亮和搜寻提示；再次按F7全部关闭。");
         message("/viridiafinder 检索：快速检索已加载候选区域，并列出192格内最近的容器");
-        message("按F8或输入 /viridiafinder 打开中文结果界面");
+        message("按F8打开寻宝首页，点击“从当前位置重算路线”");
         message("/viridiafinder 开启、关闭、状态、路线、地图、结果、导出、新一轮");
         message("/viridiafinder 范围 <水平半径0–64> <向下0–128> <向上0–128>");
         message("/viridiafinder 复查：扩大范围重新巡查，保留发现记录与已领取标记");
@@ -150,11 +153,13 @@ public final class ViridiaFinder implements ClientModInitializer {
     }
     static void syncWorld(MinecraftClient client) {
         if(world==client.world) return;
+        routeOrigin=null; movementServerKey="";
         save(); TravelAssist.disconnect();roundTracker=new RoundTracker();world=client.world;enabled=false;target=null;routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;seaRadiusLimit=240;routeRequest++;searchPending=0;newBoxes.clear();
         survey=new Survey(POINTS,settings);
         if(world==null) {scope="";return;}
         String server=client.getCurrentServerEntry()!=null?client.getCurrentServerEntry().address:
             client.getServer()!=null?"单人:"+client.getServer().getSaveProperties().getLevelName():"本地";
+        if(client.getCurrentServerEntry()!=null) movementServerKey=server.trim().toLowerCase(Locale.ROOT);
         scope=server+"|"+world.getRegistryKey().getValue()+"|"+instance;
         cycle=Long.toString(System.currentTimeMillis());
         try {
@@ -182,16 +187,69 @@ public final class ViridiaFinder implements ClientModInitializer {
         if(survey==null)return;
         survey.invalidateChunk(x,z);fastSurvey=null;
     }
+    static boolean isIsles() {
+        return world != null && world.getRegistryKey().getValue().toString().equals("monumenta:isles");
+    }
+
+    static boolean movementAutomationAllowed(MinecraftClient client) {
+        return world != null && world == client.world && (client.isInSingleplayer()
+                || !movementServerKey.isEmpty() && settings.movementServers.contains(movementServerKey));
+    }
+
+    static void requestMovementPermission(net.minecraft.client.gui.screen.Screen parent, Runnable action) {
+        var client = MinecraftClient.getInstance();
+        if (movementAutomationAllowed(client)) action.run();
+        else if (!movementServerKey.isEmpty()) client.setScreen(new MovementPermissionScreen(parent,movementServerKey,action));
+    }
+
+    static boolean grantMovementPermission(String server) {
+        if (server.isEmpty() || !server.equals(movementServerKey) || world != MinecraftClient.getInstance().world) return false;
+        settings.movementServers.add(server);
+        save();
+        return true;
+    }
+
+    static void revokeMovementPermission() {
+        settings.movementServers.remove(movementServerKey);
+        TravelAssist.stopAll(MinecraftClient.getInstance());
+        save();
+    }
+
+    static Survey.Pos sailingWaypoint() {
+        var progress = seaProgress;
+        if (!enabled || seaPlanning || target == null || seaMap == null || progress == null
+                || progress.done() || progress.needsRejoin || progress.waypoint >= progress.path.size()) return null;
+        var next = progress.path.get(progress.waypoint);
+        return seaMap.clear(seaMap.cell(playerPos()), seaMap.cell(next)) ? next : null;
+    }
+
+    static void stopSearch() {
+        TravelAssist.stopAll(MinecraftClient.getInstance());
+        enabled=false;seaPlan=null;seaProgress=null;routePlan=null;target=null;targetLabel="";
+        settings.highlight=false;settings.hud=false;seaPlanning=false;seaStartPending=0;
+        routeRequest++;searchPending=0;newBoxes.clear();navigationStatus="已暂停";save();
+    }
+
+    static void toggleSearch() {
+        if (enabled) { stopSearch(); return; }
+        enable();
+        if (!enabled) return;
+        settings.highlight=true;settings.hud=true;
+        if (isIsles()) route(); else save();
+    }
+
     static void tick(MinecraftClient client) {
         syncWorld(client);
-        while(highlightKey.wasPressed()){
-            if(enabled){TravelAssist.stop(client);TravelAssist.riptide=false;TravelAssist.swim=false;enabled=false;seaPlan=null;seaProgress=null;routePlan=null;target=null;targetLabel="";settings.highlight=false;settings.hud=false;seaPlanning=false;seaStartPending=0;routeRequest++;searchPending=0;newBoxes.clear();save();message("扫描、箱子高亮和搜寻提示已关闭");}
-            else {enable();if(enabled){settings.highlight=true;settings.hud=true;seaStartPending=40;navigationStatus="测量已加载范围";save();message("扫描、箱子高亮和搜寻提示已开启");}}
-        }
+        while(highlightKey.wasPressed()) toggleSearch();
         while(key.wasPressed()) openRequested=true;
-        if(openRequested) {openRequested=false;if(client.world!=null)client.setScreen(new FinderScreen());}
+        if(openRequested || recordsRequested) {
+            if(client.world!=null) {
+                var home=new FinderScreen();
+                client.setScreen(recordsRequested ? new RecordScreen(home) : home);
+            }
+            openRequested=false;recordsRequested=false;
+        }
         if(world==null || client.player==null) return;
-        TravelAssist.tick(client);
         if(roundTracker.reminderDue(System.currentTimeMillis()))message("预计刷新时间已到；请主手持维里迪亚之眼左键确认。尚未自动清空记录。");
         if(enabled){
             if(fastSurvey==null||fastSurvey.survey!=survey)fastSurvey=new FastSurvey(survey);
@@ -215,6 +273,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         if(enabled&&seaPlan!=null)updateSeaRoute();
         if(enabled&&routePlan!=null) updateRoute();
         if(enabled&&searchPending>0&&--searchPending==0)searchResults();
+        TravelAssist.tick(client);
         if(++ticks%200==0) save();
     }
     static Survey.View view() {
@@ -241,6 +300,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         if(!save()){message("旧轮次未能存档，已取消重置。");return;}
         long previous=cycle.matches("[0-9]+")?Long.parseLong(cycle):0;
         cycle=Long.toString(Math.max(System.currentTimeMillis(),previous+1));
+        TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);routeOrigin=null;
         survey=new Survey(POINTS,settings);fastSurvey=null;target=null;targetLabel="";routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;seaRadiusLimit=240;routeRequest++;searchPending=0;newBoxes.clear();
         if(!fromEye)roundTracker=new RoundTracker();
         if(enabled)seaStartPending=40;save();message(fromEye?"依据之眼轮次提示，已更新本地轮次；旧记录已存档。":"已开始新一轮本地记录；旧记录已存档。");
@@ -250,7 +310,13 @@ public final class ViridiaFinder implements ClientModInitializer {
         if(list.isEmpty()){message("当前192格内的已加载候选区域尚未发现容器；检索仍持续进行。");return;}
         message("当前检索结果（最近"+list.size()+"处，容器不等于宝藏）：");
         for(var h:list)message(h.kind().label+"："+coords(h.pos())+"；"+direction(h.pos()));
-        target=list.get(0).pos();targetLabel=list.get(0).kind().label;routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;routeRequest++;
+        locateRecord(list.get(0).pos(),list.get(0).kind().label);
+    }
+    static void locateRecord(Survey.Pos position, String label) {
+        TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);
+        routeRequest++;
+        routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;
+        target=position;targetLabel=label;navigationStatus="已选择箱子坐标";
     }
     static Path statePath() {return DIR.resolve(UUID.nameUUIDFromBytes(scope.getBytes(StandardCharsets.UTF_8))+"-"+cycle+".json");}
     static Path pointerPath(){return DIR.resolve(UUID.nameUUIDFromBytes(scope.getBytes(StandardCharsets.UTF_8))+"-当前.txt");}
@@ -302,24 +368,25 @@ public final class ViridiaFinder implements ClientModInitializer {
     static void route(){planSeaRoute(true);}
     static void planSeaRoute(boolean announce){
         if(world==null){if(announce)message("请先进入世界");return;}
-        if(!world.getRegistryKey().getValue().toString().equals("monumenta:isles")){
+        if(!isIsles()){
             navigationStatus="仅支持主群岛海图";if(announce)message("此海图只适用于monumenta:isles；不会在其他地图套用海路。");return;
         }
         if(!enabled)enable();settings.hud=true;settings.highlight=true;seaStartPending=0;
         for(var c:survey.candidates)if(survey.fullyScanned(c,view())||c.found.values().stream().anyMatch(f->f.mark==Survey.Mark.CLAIMED))c.visited=true;
-        var source=survey;var start=playerPos();int request=++routeRequest;
+        var source=survey;var start=playerPos();routeOrigin=start;int request=++routeRequest;
         var todo=survey.candidates.stream().filter(c->!c.visited&&c.found.values().stream().noneMatch(f->f.mark==Survey.Mark.CLAIMED)).toList();
-        int observed=SeaPlanner.observedRadius(view(),start);
+        int observed=Math.min(10,SeaPlanner.observedRadius(view(),start));
         int radius=Math.max(16,Math.min(seaRadiusLimit,(observed-1)*16-settings.radius));
         routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=true;lastSeaReplan=ticks;target=null;navigationStatus="海面覆盖路线计算中";
-        if(todo.isEmpty()){seaPlanning=false;navigationStatus="候选扫完≠宝藏找齐";save();return;}
+        if(todo.isEmpty()){TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);seaPlanning=false;navigationStatus="候选扫完≠宝藏找齐";save();return;}
+        var cachedMap=seaMap;
         java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            try{var map=SeaMap.load();return new SeaResult(map,SeaPlanner.plan(map,start,todo,radius));}
+            try{var map=cachedMap!=null?cachedMap:SeaMap.load();return new SeaResult(map,SeaPlanner.plan(map,start,todo,radius));}
             catch(IOException e){throw new java.util.concurrent.CompletionException(e);}
         }).whenComplete((result,error)->MinecraftClient.getInstance().execute(()->{
             if(source!=survey||request!=routeRequest||world==null)return;
             seaPlanning=false;
-            if(error!=null){navigationStatus="海图读取失败，停止导航";message(navigationStatus);return;}
+            if(error!=null){TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);navigationStatus="路线计算失败，请重算";message(navigationStatus);return;}
             seaMap=result.map();seaPlan=result.plan();seaProgress=new SeaRouteProgress(seaPlan);seaWait=0;
             navigationStatus="海面巡查；覆盖半径"+radius;
             if(announce)message("已规划"+seaPlan.stops().size()+"个海面扫描站；已观测完整加载圈"+observed+"区块，规划覆盖半径"+radius+"格。进度见右上角。");
@@ -336,6 +403,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         var progress=seaProgress;
         if(progress.advanceCompleted(survey)>0){seaWait=0;save();}
         if(progress.done()){
+            TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);
             long left=survey.candidates.stream().filter(c->!c.visited).count();
             navigationStatus=left==0?"候选扫完≠宝藏找齐":"海路完成；待核查"+left+"点";
             target=null;targetLabel="";seaPlan=null;seaProgress=null;save();return;
@@ -389,7 +457,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         target = approach == null ? destination : null;
         navigationStatus="连接下一海段，保持站序";
         java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            int from=map.nearest(start,256),to=map.cell(destination);
+            int from=map.oceanEntry(start),to=map.cell(destination);
             if(approach!=null){int closer=map.nearest(approach,Math.max(256,plan.radius()*2));if(closer>=0)to=closer;}
             return map.path(from,to);
         }).whenComplete((path,error)->MinecraftClient.getInstance().execute(()->{

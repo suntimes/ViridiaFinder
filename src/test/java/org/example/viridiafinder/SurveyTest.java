@@ -432,6 +432,8 @@ public final class SurveyTest {
         TravelAssistTest.run(SurveyTest::check);
         CompactHudTest.run(SurveyTest::check);
         SurveyMinimapTest.run(SurveyTest::check);
+        AutoSailTest.run(SurveyTest::check);
+        SeaPlannerOptimizationTest.run(SurveyTest::check, report::add);
         Files.write(Path.of("扫描验证结果.txt"),report,StandardCharsets.UTF_8);
         System.out.println("全部通过："+report.stream().filter(s->s.startsWith("通过：")).count()+"项；使用真实Minecraft方块状态和模拟区块视图，未连接服务器。");
     }

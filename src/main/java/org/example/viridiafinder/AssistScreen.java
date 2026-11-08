@@ -22,7 +22,7 @@ public final class AssistScreen extends Screen {
 
     @Override protected void init() {
         left = width/2-134;
-        top = Math.max(6,(height-169)/2);
+        top = Math.max(6,(height-194)/2);
         button("之眼自动更新轮次"+(settings.autoRound?" · 开":" · 关"),left,top+28,132,()->{
             settings.autoRound=!settings.autoRound;save();clearAndInit();
         });
@@ -32,7 +32,8 @@ public final class AssistScreen extends Screen {
         if (!client.isInSingleplayer() && movementAutomationAllowed(client)) {
             button("撤销本服移动辅助许可",left,top+78,268,()->{revokeMovementPermission();clearAndInit();});
         }
-        button("返回",left,top+137,268,this::close);
+        button("已忽略箱子（"+survey.ignoredPositions().size()+"）",left,top+137,268,()->client.setScreen(new IgnoredScreen(this)));
+        button("返回",left,top+162,268,this::close);
     }
 
     private void toggleAssist(boolean trident) {

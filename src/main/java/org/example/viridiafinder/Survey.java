@@ -33,8 +33,16 @@ public final class Survey {
         public boolean highlight = true;
         public boolean autoRound = true;
         public Set<String> movementServers = new HashSet<>();
+        public Map<String, Set<String>> ignoredContainers = new HashMap<>();
         public void validate() {
             if(movementServers == null) movementServers = new HashSet<>();
+            Map<String, Set<String>> scopes = new HashMap<>();
+            if (ignoredContainers != null) {
+                ignoredContainers.forEach((scope, positions) -> {
+                    if (scope != null && positions != null) scopes.put(scope, new HashSet<>(positions));
+                });
+            }
+            ignoredContainers = scopes;
             barrels = false; // 旧配置兼容：不再检索木桶。
             radius = Math.max(0, Math.min(64, radius));
             below = Math.max(0, Math.min(128, below));
@@ -66,13 +74,63 @@ public final class Survey {
     }
     public final List<Candidate> candidates;
     public final Settings settings;
+    private final String scope;
     private int index, dx, dy, dz;
     private boolean positioned;
     public long passes;
     public Survey(List<Pos> points, Settings settings) {
+        this(points, settings, "");
+    }
+    public Survey(List<Pos> points, Settings settings, String scope) {
+        this.scope = Objects.requireNonNullElse(scope, "");
         this.settings=settings; settings.validate();
         candidates = new ArrayList<>();
         for (int i=0;i<points.size();i++) candidates.add(new Candidate(i+1, points.get(i)));
+    }
+    public boolean isIgnored(Pos pos) {
+        Set<String> positions = settings.ignoredContainers.get(scope);
+        return pos != null && positions != null && positions.contains(pos.key());
+    }
+    public void setIgnored(Pos pos, boolean ignored) {
+        Objects.requireNonNull(pos, "pos");
+        if (ignored) {
+            settings.ignoredContainers.computeIfAbsent(scope, key -> new HashSet<>()).add(pos.key());
+            for (Candidate candidate : candidates) {
+                boolean revokedClaim = false;
+                for (Found found : candidate.found.values()) {
+                    if (!pos.equals(found.pos)) continue;
+                    revokedClaim |= found.mark == Mark.CLAIMED;
+                    found.mark = Mark.CONTAINER;
+                }
+                if (revokedClaim && candidate.found.values().stream().noneMatch(found -> found.mark == Mark.CLAIMED)) {
+                    candidate.visited = false;
+                }
+            }
+            return;
+        }
+        Set<String> positions = settings.ignoredContainers.get(scope);
+        if (positions != null) {
+            positions.remove(pos.key());
+            if (positions.isEmpty()) settings.ignoredContainers.remove(scope);
+        }
+    }
+    public List<Pos> ignoredPositions() {
+        List<Pos> result = new ArrayList<>();
+        Set<String> positions = settings.ignoredContainers.get(scope);
+        if (positions == null) return result;
+        for (String key : positions) {
+            if (key == null) continue;
+            String[] parts = key.split(",", -1);
+            if (parts.length != 3) continue;
+            try {
+                Pos pos = new Pos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                if (pos.key().equals(key)) result.add(pos);
+            } catch (NumberFormatException ignored) {
+                // A malformed stored coordinate must not prevent other ignored entries from loading.
+            }
+        }
+        result.sort(Comparator.comparingInt(Pos::x).thenComparingInt(Pos::y).thenComparingInt(Pos::z));
+        return result;
     }
     public int tick(View view, int budget, long deadline, Consumer<Found> discovered) {
         int spent=0;
@@ -104,7 +162,7 @@ public final class Survey {
             boolean fresh=old==null||old.kind!=kind;
             if(fresh){old=new Found(p,kind);c.found.put(p.key(),old);}
             old.present=true;old.seenAt=System.currentTimeMillis();
-            if(fresh)discovered.accept(old);
+            if(fresh && !isIgnored(p))discovered.accept(old);
         } else if(old!=null)old.present=false;
     }
     private void finishColumn(Candidate c) {

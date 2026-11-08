@@ -1,4 +1,4 @@
-# 维里迪亚寻宝 Viridia Finder 0.5.0
+# 维里迪亚寻宝 Viridia Finder 0.5.1
 
 Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，退出游戏后将发布 JAR 放入 mods，删除旧版同名模组 JAR。无需服务端安装。安装包请从右侧 Releases 下载。
 
@@ -23,6 +23,16 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 
 **F8 → 箱子与候选记录** 可查看箱子坐标、标记领取、导出记录或扩大复查。剩余 0/169 表示候选巡查结束，宝藏领取数以服务器提示为准。需要复查时，范围至少扩大至水平±16、上下各24格，并保留已有记录。主手持维里迪亚之眼左键查询可更新轮次提示，满足刷新条件后归档。F8 设置中可查看或手动更新轮次。
 
+## 排除固定道具箱
+
+在 **F8 → 箱子与候选记录** 点击一条箱子记录，再点 **非宝藏，忽略**。该精确 X、Y、Z 坐标会从箱子边框、小地图容器标记、新发现提示和箱子定位中排除。忽略名单按服务器、维度和实例标签保存，换轮次或重启后继续生效。候选小点保留，周围区域及其他箱子继续扫描，忽略操作不会把整个候选标记为已巡查或已领取。
+
+可在 **F8 → 设置 → 已忽略箱子 → 恢复** 撤销，换轮次后即使还没有扫描记录也能恢复。详细记录和导出中仍保留“非宝藏（已忽略）”，便于核查。若同一坐标以后确实出现需要寻找的箱子，请先恢复显示。模组不会根据日记标题自动认定或排除宝藏。
+
+若此前把道具箱误标为“确认宝藏”或“已领取”，“非宝藏，忽略”会撤销该坐标的宝藏标记。有此错误领取标记且没有其他已领取箱子的候选会重新加入核查，其他箱子的领取记录保留。
+
+也可输入 `/viridiafinder 忽略 <X> <Y> <Z>` 和 `/viridiafinder 恢复 <X> <Y> <Z>`。两个命令只改变当前实例的本地名单，不会操作箱子。
+
 使用 `/viridiafinder` 打开首页，`/viridiafinder 结果` 打开记录，`/viridiafinder 路线` 从当前位置重算。使用 Tab 查看其他子命令。运行时只检查客户端已加载区域中的普通箱子和陷阱箱。
 
 ## 构建与验证
@@ -44,6 +54,6 @@ Minecraft 1.20.4 / Fabric / Java 17，纯客户端。安装对应 Fabric API，�
 ## 下载
 
 - [正式版本与安装 JAR](https://github.com/suntimes/ViridiaFinder/releases/latest)
-- [直接下载 0.5.0 JAR](https://github.com/suntimes/ViridiaFinder/releases/download/v0.5.0/viridia-finder-0.5.0.jar)
+- [直接下载 0.5.1 JAR](https://github.com/suntimes/ViridiaFinder/releases/download/v0.5.1/viridia-finder-0.5.1.jar)
 
 源码可通过 Code → Download ZIP 或 Release 页面中的 Source code 下载。安装只需要 JAR，无需下载源码。

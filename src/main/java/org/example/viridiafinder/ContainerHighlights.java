@@ -18,7 +18,7 @@ public final class ContainerHighlights {
         if(limit<=0)return List.of();
         Map<String,Survey.Found> unique=new HashMap<>();
         for(var c:survey.candidates) for(var f:c.found.values()) {
-            if(f.mark==Survey.Mark.CLAIMED||!f.present||f.kind==Survey.Kind.NONE||!survey.inRange(c,f.pos)||
+            if(survey.isIgnored(f.pos)||f.mark==Survey.Mark.CLAIMED||!f.present||f.kind==Survey.Kind.NONE||!survey.inRange(c,f.pos)||
                 (!survey.settings.barrels&&f.kind==Survey.Kind.BARREL)||f.pos.distance(player)>radius)continue;
             if(!view.loaded(f.pos.x()>>4,f.pos.z()>>4))continue;
             unique.putIfAbsent(f.pos.key(),f);

@@ -432,6 +432,7 @@ public final class SurveyTest {
         TravelAssistTest.run(SurveyTest::check);
         CompactHudTest.run(SurveyTest::check);
         SurveyMinimapTest.run(SurveyTest::check);
+        IgnoredContainersTest.run(SurveyTest::check);
         AutoSailTest.run(SurveyTest::check);
         SeaPlannerOptimizationTest.run(SurveyTest::check, report::add);
         Files.write(Path.of("扫描验证结果.txt"),report,StandardCharsets.UTF_8);

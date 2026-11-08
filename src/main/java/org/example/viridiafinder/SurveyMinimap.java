@@ -81,7 +81,7 @@ final class SurveyMinimap {
                 candidates.merge(position, candidate.visited ? Style.VISITED : Style.CANDIDATE, Style::forSamePixel);
             }
             for (var found : candidate.found.values()) {
-                if (pixel(player, found.pos) < 0) continue;
+                if (survey.isIgnored(found.pos) || pixel(player, found.pos) < 0) continue;
                 var style = Style.forChest(found, found.present && survey.inRange(candidate, found.pos));
                 if (style != null) chestsByBlock.merge(found.pos, style, Style::forSameBlock);
             }

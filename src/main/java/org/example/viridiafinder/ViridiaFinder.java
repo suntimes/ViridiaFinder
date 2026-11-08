@@ -125,6 +125,15 @@ public final class ViridiaFinder implements ClientModInitializer {
             root.then(literal("复查").executes(c->{widenReview();return 1;}));
             root.then(literal("新一轮").executes(c->{newRound(false);return 1;}));
             root.then(literal("结果").executes(c->{recordsRequested=true;return 1;}));
+            for (boolean ignored : new boolean[]{true,false}) {
+                root.then(literal(ignored ? "忽略" : "恢复")
+                    .then(argument("X",IntegerArgumentType.integer()).then(argument("Y",IntegerArgumentType.integer())
+                    .then(argument("Z",IntegerArgumentType.integer()).executes(c->{
+                        setContainerIgnored(new Survey.Pos(IntegerArgumentType.getInteger(c,"X"),
+                            IntegerArgumentType.getInteger(c,"Y"),IntegerArgumentType.getInteger(c,"Z")),ignored);
+                        return 1;
+                    })))));
+            }
             root.then(literal("导出").executes(c->{export();return 1;}));
             root.then(literal("地图").executes(c->{settings.hud=!settings.hud;save();message("搜寻提示"+(settings.hud?"开启":"关闭"));return 1;}));
             root.then(literal("木桶").executes(c->{message("本版本仅检索普通箱子和陷阱箱，木桶识别已移除。");return 1;}));
@@ -145,6 +154,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         message("/viridiafinder 复查：扩大范围重新巡查，保留发现记录与已领取标记");
         message("/viridiafinder 预算 <128–8192>；/viridiafinder 实例 <标签>");
         message("容器不等于宝藏。请在结果界面选择容器后标记疑似、确认或已领取。");
+        message("固定道具箱可在记录中选择“非宝藏，忽略”；设置中可恢复。也可用 /viridiafinder 忽略 <X> <Y> <Z> 或 恢复 <X> <Y> <Z>。");
     }
     static void enable() {
         syncWorld(MinecraftClient.getInstance());
@@ -161,6 +171,7 @@ public final class ViridiaFinder implements ClientModInitializer {
             client.getServer()!=null?"单人:"+client.getServer().getSaveProperties().getLevelName():"本地";
         if(client.getCurrentServerEntry()!=null) movementServerKey=server.trim().toLowerCase(Locale.ROOT);
         scope=server+"|"+world.getRegistryKey().getValue()+"|"+instance;
+        survey=new Survey(POINTS,settings,scope);
         cycle=Long.toString(System.currentTimeMillis());
         try {
             if(Files.exists(pointerPath())) {
@@ -181,7 +192,7 @@ public final class ViridiaFinder implements ClientModInitializer {
                     }
                 }
             }
-        } catch(Exception e) { message("记录读取失败，原文件保留；请检查配置目录");cycle=Long.toString(System.currentTimeMillis());survey=new Survey(POINTS,settings); }
+        } catch(Exception e) { message("记录读取失败，原文件保留；请检查配置目录");cycle=Long.toString(System.currentTimeMillis());survey=new Survey(POINTS,settings,scope); }
     }
     static void invalidateChunk(int x,int z) {
         if(survey==null)return;
@@ -301,7 +312,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         long previous=cycle.matches("[0-9]+")?Long.parseLong(cycle):0;
         cycle=Long.toString(Math.max(System.currentTimeMillis(),previous+1));
         TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);routeOrigin=null;
-        survey=new Survey(POINTS,settings);fastSurvey=null;target=null;targetLabel="";routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;seaRadiusLimit=240;routeRequest++;searchPending=0;newBoxes.clear();
+        survey=new Survey(POINTS,settings,scope);fastSurvey=null;target=null;targetLabel="";routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;seaRadiusLimit=240;routeRequest++;searchPending=0;newBoxes.clear();
         if(!fromEye)roundTracker=new RoundTracker();
         if(enabled)seaStartPending=40;save();message(fromEye?"依据之眼轮次提示，已更新本地轮次；旧记录已存档。":"已开始新一轮本地记录；旧记录已存档。");
     }
@@ -313,6 +324,7 @@ public final class ViridiaFinder implements ClientModInitializer {
         locateRecord(list.get(0).pos(),list.get(0).kind().label);
     }
     static void locateRecord(Survey.Pos position, String label) {
+        if(survey.isIgnored(position)){message("此箱子已忽略；恢复显示后才能定位。");return;}
         TravelAssist.setAutoSail(MinecraftClient.getInstance(),false);
         routeRequest++;
         routePlan=null;seaPlan=null;seaProgress=null;seaPlanning=false;seaStartPending=0;
@@ -349,8 +361,23 @@ public final class ViridiaFinder implements ClientModInitializer {
         return c.found.values().stream().filter(f->survey.inRange(c,f.pos)&&(settings.barrels||f.kind!=Survey.Kind.BARREL)).sorted(Comparator.comparingDouble(f->f.pos.distance(c.pos))).toList();
     }
     static void mark(Survey.Found f,Survey.Mark mark) {
+        if(survey.isIgnored(f.pos)){message("此箱子已忽略；请先恢复显示再标记。");return;}
         for(Survey.Candidate c:survey.candidates) {Survey.Found match=c.found.get(f.pos.key());if(match!=null){match.mark=mark;if(mark==Survey.Mark.CLAIMED)c.visited=true;}}
         save();message("已标记："+mark.label+"，"+coords(f.pos));
+    }
+    static void setContainerIgnored(Survey.Pos position, boolean ignored) {
+        if(world==null || scope.isEmpty()){message("请先进入世界");return;}
+        long visitedBefore=survey.candidates.stream().filter(c->c.visited).count();
+        survey.setIgnored(position,ignored);
+        if(enabled && ignored && survey.candidates.stream().filter(c->c.visited).count()<visitedBefore){
+            seaStartPending=1;
+        }
+        newBoxes.remove(position.key());
+        // A container selection may be cleared, but an overlapping coverage stop is still needed.
+        if(ignored && position.equals(target) && routePlan==null && seaPlan==null && !seaPlanning){
+            target=null;targetLabel="";navigationStatus="此箱子已忽略";
+        }
+        if(save())message((ignored?"已忽略非宝藏箱子（跨轮次保留）：":"已恢复箱子显示：")+coords(position));
     }
     static void restartCoverage(){
         survey.restartCoverage();fastSurvey=null;routePlan=null;seaPlan=null;seaProgress=null;
@@ -486,7 +513,7 @@ public final class ViridiaFinder implements ClientModInitializer {
             String scan=c.completedAt==0?"未完成一次扫描":c.unknown>0?"上次部分扫描":"上次扫描完成";
             var list=visible(c);
             if(list.isEmpty()) out.append(c.id).append(',').append(coords(c.pos)).append(',').append(survey.coverage(c,view())).append(',').append(scan).append(",尚未发现,,,,,不能推断无箱子\n");
-            for(var f:list) out.append(c.id).append(',').append(coords(c.pos)).append(',').append(survey.coverage(c,view())).append(',').append(scan).append(',').append(f.kind.label).append(',').append(coords(f.pos)).append(',').append('"').append(f.pos.offset(c.pos)).append('"').append(',').append(String.format(Locale.ROOT,"%.2f",f.pos.distance(c.pos))).append(',').append(f.mark.label).append(',').append(presence(f)).append('\n');
+            for(var f:list) out.append(c.id).append(',').append(coords(c.pos)).append(',').append(survey.coverage(c,view())).append(',').append(scan).append(',').append(f.kind.label).append(',').append(coords(f.pos)).append(',').append('"').append(f.pos.offset(c.pos)).append('"').append(',').append(String.format(Locale.ROOT,"%.2f",f.pos.distance(c.pos))).append(',').append(survey.isIgnored(f.pos)?"非宝藏（已忽略）":f.mark.label).append(',').append(presence(f)).append('\n');
         }
         try{Files.createDirectories(DIR);Files.writeString(DIR.resolve("扫描结果.csv"),"\ufeff"+out,StandardCharsets.UTF_8);message("已导出："+DIR.resolve("扫描结果.csv"));}catch(IOException e){message("导出失败："+e.getMessage());}
     }
